@@ -1,10 +1,12 @@
 import asyncio
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -22,12 +24,25 @@ from aiogram.types import (
 )
 
 # =========================================================
+#  RENDER PORT SERVER (BEPUL 24/7 ISHLASH UCHUN)
+# =========================================================
+async def handle_ping(request):
+    return web.Response(text="Bot runs smoothly!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+
+# =========================================================
 #  CONFIG
 # =========================================================
 BOT_TOKEN = "8678002733:AAGaG9W2Jf4ZvVA2FSPzL7rFHB9ZyxC3SpI"
 
-# ⚠️ IMPORTANT: replace this with YOUR real Telegram numeric user ID.
-# You can get your ID by messaging @userinfobot on Telegram.
 ADMIN_IDS = {8425304206}
 
 PROJECTS_DIR = Path(__file__).parent / "projects"
@@ -41,25 +56,19 @@ logger = logging.getLogger("FoggyPalaceMystery")
 
 router = Router()
 
-
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
-
 # =========================================================
-#  FSM STATES (admin project upload flow)
+#  FSM STATES
 # =========================================================
 class AdminStates(StatesGroup):
     waiting_for_file = State()
 
-
 # =========================================================
 #  IN-MEMORY USER STATE
-#  user_id -> {"project": str|None, "node": str|None,
-#              "evidence_by_project": {project_id: set(evidence_keys)}, "chapter": int}
 # =========================================================
 user_data: Dict[int, Dict] = {}
-
 
 def get_user(user_id: int) -> Dict:
     if user_id not in user_data:
@@ -71,11 +80,8 @@ def get_user(user_id: int) -> Dict:
         }
     return user_data[user_id]
 
-
 # =========================================================
 #  BUILT-IN STORY: "The Foggy Palace Mystery"
-#  (options use dict format so it shares the same engine as
-#   admin-uploaded JSON projects)
 # =========================================================
 BUILTIN_NODES: Dict[str, Dict] = {
     "start": {
@@ -244,12 +250,7 @@ BUILTIN_NODES: Dict[str, Dict] = {
     },
 }
 
-# =========================================================
-#  PROJECT REGISTRY
-#  project_id -> {"title", "description", "start", "nodes", "builtin"}
-# =========================================================
 PROJECTS: Dict[str, Dict] = {}
-
 
 def register_builtin_project():
     PROJECTS["foggy_palace"] = {
@@ -260,12 +261,10 @@ def register_builtin_project():
         "builtin": True,
     }
 
-
 def sanitize_id(raw: str) -> str:
     base = raw.rsplit(".", 1)[0].strip().lower()
     base = re.sub(r"[^a-z0-9_]+", "_", base).strip("_")
     return base or "project"
-
 
 def validate_and_build_project(data: dict, source_name: str) -> Tuple[str, Dict]:
     if not isinstance(data, dict):
@@ -312,7 +311,6 @@ def validate_and_build_project(data: dict, source_name: str) -> Tuple[str, Dict]
     }
     return project_id, project
 
-
 def load_projects_from_disk():
     for file_path in PROJECTS_DIR.glob("*.json"):
         try:
@@ -323,7 +321,6 @@ def load_projects_from_disk():
             logger.info("Loaded project '%s' from %s", project_id, file_path.name)
         except Exception as exc:
             logger.warning("Skipped invalid project file %s: %s", file_path.name, exc)
-
 
 PROJECT_JSON_TEMPLATE = """{
   "title": "The Silent Manor",
@@ -358,9 +355,8 @@ PROJECT_JSON_TEMPLATE = """{
   }
 }"""
 
-
 # =========================================================
-#  KEYBOARDS
+#  KEYBOARDS & HELPERS
 # =========================================================
 def main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     rows = [
@@ -372,7 +368,6 @@ def main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
         rows.append([KeyboardButton(text="➕ Add Project")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
-
 def story_inline_keyboard(project_id: str, node_id: str) -> InlineKeyboardMarkup:
     node = PROJECTS[project_id]["nodes"][node_id]
     buttons: List[List[InlineKeyboardButton]] = []
@@ -382,20 +377,14 @@ def story_inline_keyboard(project_id: str, node_id: str) -> InlineKeyboardMarkup
         )
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-
 def projects_inline_keyboard() -> InlineKeyboardMarkup:
     buttons: List[List[InlineKeyboardButton]] = []
     for pid, project in PROJECTS.items():
         buttons.append([InlineKeyboardButton(text=project["title"], callback_data=f"project:{pid}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-
-# =========================================================
-#  HELPERS
-# =========================================================
 def evidence_display_name(key: str) -> str:
     return "🗝 " + key.replace("_", " ").title()
-
 
 async def send_story_node(target_message: Message, user_id: int, project_id: str, node_id: str):
     project = PROJECTS[project_id]
@@ -407,7 +396,6 @@ async def send_story_node(target_message: Message, user_id: int, project_id: str
     state["chapter"] = node.get("chapter", 1)
 
     await target_message.answer(node["text"], reply_markup=story_inline_keyboard(project_id, node_id))
-
 
 # =========================================================
 #  HANDLERS: COMMANDS & MAIN MENU
@@ -433,7 +421,6 @@ async def cmd_start(message: Message, state: FSMContext):
         reply_markup=main_menu_keyboard(user_id),
     )
 
-
 @router.message(F.text == "🏰 Start Quest")
 async def start_quest(message: Message):
     user_id = message.from_user.id
@@ -444,7 +431,6 @@ async def start_quest(message: Message):
         "chapter": 1,
     }
     await send_story_node(message, user_id, "foggy_palace", "start")
-
 
 @router.message(F.text == "📂 Projects")
 async def show_projects(message: Message):
@@ -458,7 +444,6 @@ async def show_projects(message: Message):
         lines.append(f"• <b>{project['title']}</b>{desc}")
 
     await message.answer("\n".join(lines), reply_markup=projects_inline_keyboard())
-
 
 @router.message(F.text == "🔍 Examine Evidence")
 async def examine_evidence(message: Message):
@@ -483,7 +468,6 @@ async def examine_evidence(message: Message):
         blocks.append(f"<b>{title}</b>\n{lines}")
 
     await message.answer("🔍 <b>Evidence Collected:</b>\n\n" + "\n\n".join(blocks))
-
 
 @router.message(F.text == "📜 Story Progress")
 async def story_progress(message: Message):
@@ -511,7 +495,6 @@ async def story_progress(message: Message):
         "to switch to a different case."
     )
 
-
 @router.message(F.text == "❓ Help & Rules")
 async def help_rules(message: Message):
     await message.answer(
@@ -526,9 +509,8 @@ async def help_rules(message: Message):
         "solid evidence to solve the case!"
     )
 
-
 # =========================================================
-#  HANDLERS: ADMIN — ADD NEW PROJECT
+#  HANDLERS: ADMIN
 # =========================================================
 @router.message(F.text == "➕ Add Project")
 async def add_project_start(message: Message, state: FSMContext):
@@ -551,12 +533,10 @@ async def add_project_start(message: Message, state: FSMContext):
         "Send /cancel to stop."
     )
 
-
 @router.message(AdminStates.waiting_for_file, Command("cancel"))
 async def add_project_cancel(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("❌ Cancelled adding a new project.", reply_markup=main_menu_keyboard(message.from_user.id))
-
 
 @router.message(AdminStates.waiting_for_file, F.document)
 async def add_project_receive_file(message: Message, state: FSMContext):
@@ -595,11 +575,9 @@ async def add_project_receive_file(message: Message, state: FSMContext):
         reply_markup=main_menu_keyboard(message.from_user.id),
     )
 
-
 @router.message(AdminStates.waiting_for_file)
 async def add_project_wrong_content(message: Message):
     await message.answer("📎 Please send the story as a <b>.json file (document)</b>, or /cancel.")
-
 
 # =========================================================
 #  HANDLERS: INLINE BUTTONS
@@ -622,7 +600,6 @@ async def handle_project_selection(callback: CallbackQuery):
     await callback.answer()
     if callback.message:
         await send_story_node(callback.message, user_id, project_id, project["start"])
-
 
 @router.callback_query(F.data.startswith("story:"))
 async def handle_story_choice(callback: CallbackQuery):
@@ -656,7 +633,6 @@ async def handle_story_choice(callback: CallbackQuery):
             pass
         await send_story_node(callback.message, user_id, project_id, next_node_id)
 
-
 # =========================================================
 #  FALLBACK HANDLER
 # =========================================================
@@ -667,14 +643,17 @@ async def fallback_handler(message: Message):
         reply_markup=main_menu_keyboard(message.from_user.id),
     )
 
-
 # =========================================================
-#  MAIN ENTRY POINT
+#  MAIN ENTRY POINT (PORT VA BOT ISHGA TUSHISHI)
 # =========================================================
 async def main():
     register_builtin_project()
     load_projects_from_disk()
 
+    # 1. Render talab qilgan port-serverni ishga tushirish
+    await start_web_server()
+
+    # 2. Telegram Botni ishga tushirish
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -685,7 +664,6 @@ async def main():
     logger.info("Starting The Foggy Palace Mystery bot with %d project(s)...", len(PROJECTS))
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     try:
