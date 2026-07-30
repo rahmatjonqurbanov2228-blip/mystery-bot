@@ -22,8 +22,15 @@ from aiogram.types import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Token va Admin ID
-BOT_TOKEN = "8678002733:AAGaG9W2Jf4ZvVA2FSPzL7rFHB9ZyxC3SpI"
+# =========================================================
+# XAVFSIZLIK ESLATMASI:
+# Tokenni to'g'ridan-to'g'ri kodga yozmang!
+# @BotFather orqali eski tokenni bekor qilib (revoke),
+# yangisini oling va quyidagicha muhit o'zgaruvchisidan o'qing:
+#   export BOT_TOKEN="yangi_token_bu_yerda"
+# Windows'da: set BOT_TOKEN=yangi_token_bu_yerda
+# =========================================================
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8641817546:AAE9g0L8f-msCuYs5wh4nzyPwgyRNf80Rps")
 ADMIN_ID = 8425304206
 
 # Xotira va Bazalar
@@ -123,6 +130,7 @@ def main_menu_keyboard(lang: str, user_id: int):
 
 
 def evidence_upload_keyboard():
+    """Rasm yuklash bosqichida ko'rinadigan klaviatura (Bekor qilish tugmasi bilan)."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=DONE_PHOTOS_TEXT)],
@@ -133,6 +141,7 @@ def evidence_upload_keyboard():
 
 
 def cancel_only_keyboard():
+    """Admin qo'shish jarayonining boshqa bosqichlarida ko'rinadigan klaviatura."""
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=CANCEL_TEXT)]],
         resize_keyboard=True,
@@ -198,7 +207,8 @@ async def process_language_choice(callback: CallbackQuery):
 
 
 # ---------------------------------------------------------
-# BEKOR QILISH
+# BEKOR QILISH — istalgan admin-qo'shish bosqichida ishlaydi
+# (StatesGroup ichidagi har qanday holatda ham ushlanadi)
 # ---------------------------------------------------------
 @router.message(AdminAddState.waiting_for_title, F.text == CANCEL_TEXT)
 @router.message(AdminAddState.waiting_for_evidence_photos, F.text == CANCEL_TEXT)
@@ -346,6 +356,7 @@ async def admin_get_evidence_photo(message: Message):
 
 @router.message(AdminAddState.waiting_for_evidence_photos, F.text == DONE_PHOTOS_TEXT)
 async def admin_finish_evidences(message: Message, state: FSMContext):
+    lang = user_languages.get(message.from_user.id, "uz")
     await state.set_state(AdminAddState.waiting_for_suspect_count)
     await message.answer(
         "🔢 Gumondorlar sonini raqamda kiriting:",
@@ -361,6 +372,8 @@ async def admin_evidence_wrong_type(message: Message):
 
 @router.message(AdminAddState.waiting_for_evidence_photos)
 async def admin_evidence_fallback(message: Message):
+    # Kutilmagan turdagi xabar (matn, stiker va h.k.) — botni "sukut" holatiga
+    # tushirmaslik uchun foydalanuvchiga aniq ko'rsatma beramiz.
     await message.answer(
         "🖼 Iltimos, rasm yuboring yoki tugmalardan birini bosing.",
         reply_markup=evidence_upload_keyboard(),
@@ -512,7 +525,7 @@ async def admin_suspect_dialog_fallback(message: Message):
 
 
 # ---------------------------------------------------------
-# GLOBAL XATOLIKLARNI USHLASH
+# GLOBAL XATOLIKLARNI USHLASH (endi konsolda to'liq ko'rinadi)
 # ---------------------------------------------------------
 @router.errors()
 async def global_error_handler(event: ErrorEvent):
@@ -538,3 +551,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         logger.info("Bot stopped!")
+        
