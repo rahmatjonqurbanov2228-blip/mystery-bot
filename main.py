@@ -259,22 +259,33 @@ async def admin_finish_evidences(message: Message, state: FSMContext):
 @router.message(AdminAddState.waiting_for_suspect_count)
 async def admin_get_suspect_count(message: Message, state: FSMContext):
     if not message.text.isdigit():
+        await message.answer("⚠️ Iltimos, faqat raqam kiriting (masalan: 2):")
         return
     admin_temp_data[message.from_user.id]["total_suspects"] = int(message.text)
     admin_temp_data[message.from_user.id]["current_suspect_index"] = 0
+    
     await state.set_state(AdminAddState.waiting_for_suspect_photo)
-    await message.answer("📸 1-Gumondor rasmini yuboring:")
+    await message.answer("📸 **1-gumondor** rasmini yuboring:", parse_mode=ParseMode.MARKDOWN)
 
 @router.message(AdminAddState.waiting_for_suspect_photo, F.photo)
 async def admin_get_suspect_photo(message: Message, state: FSMContext):
-    admin_temp_data[message.from_user.id]["current_photo"] = message.photo[-1].file_id
+    user_id = message.from_user.id
+    idx = admin_temp_data[user_id]["current_suspect_index"] + 1
+    admin_temp_data[user_id]["current_photo"] = message.photo[-1].file_id
+    
     await state.set_state(AdminAddState.waiting_for_suspect_info)
-    await message.answer("📋 Ma'lumotlarni kiriting:\nIsmi: ...\nYoshi: ...\nJinsi: ...\nOilaviy ahvoli: ...\nSudlanganligi: ...")
+    await message.answer(
+        f"📋 **{idx}-gumondor** ma'lumotlarini quyidagi tartibda kiriting:\n\n"
+        "Ismi: ...\nYoshi: ...\nJinsi: ...\nOilaviy ahvoli: ...\nSudlanganligi: ...",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 @router.message(AdminAddState.waiting_for_suspect_info)
 async def admin_get_suspect_info(message: Message, state: FSMContext):
+    user_id = message.from_user.id
     lines = message.text.strip().split("\n")
     info = {"name": "Noma'lum", "age": "Noma'lum", "gender": "Noma'lum", "family": "Noma'lum", "criminal_record": "Noma'lum"}
+    
     for line in lines:
         if ":" in line:
             k, v = line.split(":", 1)
@@ -284,9 +295,16 @@ async def admin_get_suspect_info(message: Message, state: FSMContext):
             elif "jins" in k: info["gender"] = v
             elif "oilaviy" in k: info["family"] = v
             elif "sudlan" in k: info["criminal_record"] = v
-    admin_temp_data[message.from_user.id]["current_info"] = info
+            
+    admin_temp_data[user_id]["current_info"] = info
+    idx = admin_temp_data[user_id]["current_suspect_index"] + 1
+    
     await state.set_state(AdminAddState.waiting_for_suspect_dialog)
-    await message.answer("🗣 Savol-javoblarni kiriting:\nTergovchi: ...\nGumondor: ...")
+    await message.answer(
+        f"🗣 **{idx}-gumondor** uchun tergov savol-javoblarini kiriting:\n\n"
+        "Tergovchi: ...\nGumondor: ...",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 @router.message(AdminAddState.waiting_for_suspect_dialog)
 async def admin_get_suspect_dialog(message: Message, state: FSMContext):
@@ -298,21 +316,31 @@ async def admin_get_suspect_dialog(message: Message, state: FSMContext):
     for line in lines:
         if line.lower().startswith("tergovchi:"):
             current_q = line.split(":", 1)[1].strip()
-        elif ":" in line and current__q if 'current_q' in locals() else current_q:
+        elif ":" in line and current_q:
             parsed_dialogs.append({"question": current_q, "answer": line.split(":", 1)[1].strip()})
             current_q = None
 
-    temp["suspects"].append({**temp["current_info"], "photo": temp["current_photo"], "dialogs": parsed_dialogs})
+    temp["suspects"].append({
+        **temp["current_info"], 
+        "photo": temp["current_photo"], 
+        "dialogs": parsed_dialogs
+    })
+    
     temp["current_suspect_index"] += 1
     
     if temp["current_suspect_index"] < temp["total_suspects"]:
+        next_idx = temp["current_suspect_index"] + 1
         await state.set_state(AdminAddState.waiting_for_suspect_photo)
-        await message.answer(f"📸 Keyingi gumondor rasmini yuboring:")
+        await message.answer(f"📸 Keyingi (**{next_idx}-gumondor**) rasmini yuboring:")
     else:
         proj_id = f"proj_{len(PROJECTS) + 1}"
-        PROJECTS[proj_id] = {"title": temp["title"], "evidences": temp["evidences"], "suspects": temp["suspects"]}
+        PROJECTS[proj_id] = {
+            "title": temp["title"], 
+            "evidences": temp["evidences"], 
+            "suspects": temp["suspects"]
+        }
         await state.clear()
-        await message.answer("🎉 Loyiha muvaffaqiyatli saqlandi!", reply_markup=main_menu_keyboard("uz", user_id))
+        await message.answer("🎉 Barcha gumondorlar qo'shildi va loyiha muvaffaqiyatli saqlandi!", reply_markup=main_menu_keyboard("uz", user_id))
 
 async def main():
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
