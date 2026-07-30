@@ -309,16 +309,26 @@ async def admin_get_suspect_info(message: Message, state: FSMContext):
 @router.message(AdminAddState.waiting_for_suspect_dialog)
 async def admin_get_suspect_dialog(message: Message, state: FSMContext):
     user_id = message.from_user.id
+    if user_id not in admin_temp_data:
+        await state.clear()
+        return
+        
     temp = admin_temp_data[user_id]
     lines = message.text.strip().split('\n')
-    parsed_dialogs, current_q = [], None
+    parsed_dialogs = []
+    current_q = None
     
     for line in lines:
-        if line.lower().startswith("tergovchi:"):
+        line_lower = line.lower()
+        if line_lower.startswith("tergovchi:"):
             current_q = line.split(":", 1)[1].strip()
-        elif ":" in line and current_q:
-            parsed_dialogs.append({"question": current_q, "answer": line.split(":", 1)[1].strip()})
+        elif line_lower.startswith("gumondor:") and current_q:
+            answer = line.split(":", 1)[1].strip()
+            parsed_dialogs.append({"question": current_q, "answer": answer})
             current_q = None
+
+    if not parsed_dialogs and message.text:
+        parsed_dialogs.append({"question": "Savol", "answer": message.text.strip()})
 
     temp["suspects"].append({
         **temp["current_info"], 
